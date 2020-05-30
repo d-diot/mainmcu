@@ -8,7 +8,7 @@
 // Configuration
 #define ENABLE_BOOST
 #define ENABLE_BUCK
-#define DEBUG
+//#define DEBUG
 
 // Boost Converter parameters
 int BoostTargetVoltage = 10000; //Desired output voltage of the boost converter (Millivolts)
