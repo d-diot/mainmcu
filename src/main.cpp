@@ -5,19 +5,30 @@
 #include <Arduino.h>
 
 // ########################### CONFIG ##########################################
-// Configuration
+// Functionalities definition
 #define ENABLE_BOOST
 #define ENABLE_BUCK
-#define ENABLE_BUTTON
-//#define ENV_PLATFORMIO
+#define ENV_PLATFORMIO
 //#define DEBUG
+
+// PIN definition
+int ButtonPin = 2;           //Button PIN: is the same for physical button and TTP223 capacitive touch switch with A closed and B open (see https://www.hackster.io/najad/how-to-use-a-ttp223-based-touch-switch-a04f7d).
+int BoostPin = 3;            //Digital pin D3 for boost PWM signal
+int PiPowerOffPin = 4;       //Pin connected to the Raspberry Pi poweroff signal PIN (GPIO6)
+int PiShutdownPin = 7;       //Pin connected to the Raspberry Pi shutdown PIN (GPIO5)
+int PiPowerlinePin = 8;      //Pin that controls the main power line (Raspberry Pi)
+int BuckPin = 11;            //Digital pin D11 for buck PWM signal
+int BoostPowerlinePin = 12;  //Pin that controls the boost converter power line
+int BuckPowerlinePin = A0;   //Pin that controls the buck converter power line
+int RFLinkPowerlinePin = A1; //Pin that controls the ATMega2560 (RFLink) power line
+int VPowerlinePin = A2;      //Pin that controls the 3.3V (AMS117) power line
+int BoostFeedbackPin = A6;   //The boost feedback input is A6 (pin 20)
+int BuckFeedbackPin = A7;    //The buck feedback input is A7 (pin 21)
 
 // Boost Converter parameters
 int BoostTargetVoltage = 10000; //Desired output voltage of the boost converter (Millivolts)
 long BoostR1 = 68000;           //R1 value in Ohm (feedback circuit)
 long BoostR2 = 47000;           //R2 value in Ohm (feedback circuit)
-int BoostFeedbackPin = A6;      //The boost feedback input is A6 (pin 20)
-int BoostPin = 3;               //Digital pin D3 for boost PWM signal
 int BoostPwm = 0;               //Initial value of PWM boost width
 int BoostMaxVoltage = 12000;    //Maximum voltage for the board safety
 int BoostMaxPwm = 200;          //Maximum PWM value
@@ -26,24 +37,31 @@ int BoostMaxPwm = 200;          //Maximum PWM value
 int BuckTargetVoltage = 1700; //Desired output voltage of the buck converter (Millivolts)
 long BuckR1 = 0;              //R1 value in Ohm (feedback circuit)
 long BuckR2 = 0;              //R2 value in Ohm (feedback circuit)
-int BuckFeedbackPin = A7;     //The buck feedback input is A7 (pin 21)
-int BuckPin = 11;             //Digital pin D11 for buck PWM signal
 int BuckPwm = 255;            //Initial value of PWM buck width
 int BuckMinVoltage = 1500;    //Minimum voltage for the board safety
 
 // Button parameters
-int ButtonPin = 2; //Button PIN: is the same for physical button and TTP223 capacitive touch switch with A closed and B open (see https://www.hackster.io/najad/how-to-use-a-ttp223-based-touch-switch-a04f7d).
-#ifdef ENABLE_BUTTON
 int DebounceInterval = 5; //Debounce interval in milliseconds
-#endif
+
+// Pi Shutdown pin parameters
+uint8_t pi_shutdown_pin_press_time = 100; // Time in milliseconds to keep the pi shutdown pin LOW
 
 // ####################### END OF CONFIG ###########################################
 
 // ########################### INIT ################################################
 
 long Vcc;
-
-#ifdef ENABLE_BUTTON
+bool pi_status;
+bool pi_shutdown_pin_activated = false;
+unsigned long current_time_millis;
+unsigned long button_press_millis = 0;
+unsigned long pi_shutdown_pin_press_start = 0;
+#ifdef ENABLE_BOOST
+long BoostAcutalVoltage;
+#endif
+#ifdef ENABLE_BOOST
+long BuckAcutalVoltage;
+#endif
 #ifdef ENV_PLATFORMIO
 #include <Bounce2.h>
 #endif
@@ -52,7 +70,6 @@ long Vcc;
 #include "libraries/Bounce2/Bounce2.h"
 #endif
 Bounce debouncer = Bounce();
-#endif
 
 // ########################## END OF INIT ##########################################
 
@@ -101,46 +118,14 @@ long read_voltage(int PinNumber, long R1, long R2)
   return vout;
 }
 
-// ########################### END OF CUSTOM FUNCTIONS #################################
-
-// ##################################### SETUP #########################################
-
-void setup()
-{
-  pinMode(BoostFeedbackPin, INPUT);
-  pinMode(BoostPin, OUTPUT);
-  pinMode(BuckFeedbackPin, INPUT);
-  pinMode(BuckPin, OUTPUT);
-  TCCR2B = TCCR2B & B11111000 | B00000001; // pin 3 and 11 PWM frequency of 31372.55 Hz
-  analogWrite(BoostPin, BoostPwm);
-  analogWrite(BuckPin, BuckPwm);
-  pinMode(ButtonPin, INPUT_PULLUP);
-  Vcc = readVcc();
-#ifdef ENABLE_BUTTON
-  debouncer.attach(ButtonPin);
-  debouncer.interval(DebounceInterval);
-#endif
-#ifdef DEBUG
-  // initialize serial communication at 9600 bits per second:
-  Serial.begin(9600);
-  Serial.print("Vcc: ");
-  Serial.print(Vcc);
-  Serial.println(" mV");
-#endif
-}
-
-// ##################################### END OF SETUP #####################################
-
-// ##################################### LOOP #############################################
-
-void loop()
-{
 #ifdef ENABLE_BOOST
-//If the desired value is HIGHER than the real value, we increase PWM width
+void update_boost_converter()
+{
+  //If the desired value is HIGHER than the real value, we increase PWM width
 #ifdef DEBUG
   Serial.println("Boost converter");
 #endif
-  long BoostAcutalVoltage = read_voltage(BoostFeedbackPin, BoostR1, BoostR2);
+  BoostAcutalVoltage = read_voltage(BoostFeedbackPin, BoostR1, BoostR2);
   if (BoostTargetVoltage > BoostAcutalVoltage)
   {
     BoostPwm = BoostPwm + 1;
@@ -164,13 +149,16 @@ void loop()
 #endif
   analogWrite(BoostPin, BoostPwm);
 #endif
+}
 
 #ifdef ENABLE_BUCK
-//If the desired value is HIGHER than the real value, we increase PWM width
+void update_buck_converter()
+{
+  //If the desired value is HIGHER than the real value, we decrease PWM width (p-mos, reverse logic)
 #ifdef DEBUG
   Serial.println("Buck converter");
 #endif
-  long BuckAcutalVoltage = read_voltage(BuckFeedbackPin, BuckR1, BuckR2);
+  BuckAcutalVoltage = read_voltage(BuckFeedbackPin, BuckR1, BuckR2);
   if (BuckTargetVoltage > BuckAcutalVoltage)
   {
     BuckPwm = BuckPwm - 1;
@@ -193,5 +181,149 @@ void loop()
   Serial.println(BuckPwm);
 #endif
   analogWrite(BuckPin, BuckPwm);
+#endif
+}
+
+void activate_pi_shutdown_pin()
+{
+  digitalWrite(PiShutdownPin, HIGH);
+  pi_shutdown_pin_press_start = millis();
+  pi_shutdown_pin_activated = true;
+#ifdef DEBUG
+  Serial.println("Pi shutdown pin activated");
+#endif
+}
+
+void release_pi_shutdown_pin()
+{
+  digitalWrite(PiShutdownPin, LOW);
+  pi_shutdown_pin_press_start = 0;
+  pi_shutdown_pin_activated = false;
+#ifdef DEBUG
+  Serial.println("Pi shutdown pin released");
+#endif
+}
+
+void open_all_powerlines()
+{
+  digitalWrite(PiPowerlinePin, LOW);
+  digitalWrite(BoostPowerlinePin, LOW);
+  digitalWrite(BuckPowerlinePin, LOW);
+  digitalWrite(RFLinkPowerlinePin, LOW);
+  digitalWrite(VPowerlinePin, LOW);
+}
+
+void close_all_powerlines()
+{
+  digitalWrite(PiPowerlinePin, HIGH);
+  digitalWrite(BoostPowerlinePin, HIGH);
+  digitalWrite(BuckPowerlinePin, HIGH);
+  digitalWrite(RFLinkPowerlinePin, HIGH);
+  digitalWrite(VPowerlinePin, HIGH);
+}
+
+void on_button_release()
+{
+  // Short press detection (50 -350 ms)
+  if (current_time_millis - button_press_millis >= 50 && current_time_millis - button_press_millis <= 350)
+  {
+#ifdef DEBUG
+    Serial.println("Button click type: short");
+#endif
+    pi_status ? activate_pi_shutdown_pin() : open_all_powerlines();
+  }
+  // Long press detection (> 3000 ms)
+  else if (current_time_millis - button_press_millis >= 3000)
+  {
+#ifdef DEBUG
+    Serial.println("Button click type: long");
+#endif
+    pi_status ? close_all_powerlines() : open_all_powerlines();
+  }
+  else
+  {
+#ifdef DEBUG
+    Serial.println("Button click type: unknown, do nothing");
+#endif
+    return;
+  }
+}
+
+// ########################### END OF CUSTOM FUNCTIONS #################################
+
+// ##################################### SETUP #########################################
+
+void setup()
+{
+  pinMode(PiPowerOffPin, INPUT);
+  pinMode(PiPowerlinePin, OUTPUT);
+  pi_status = digitalRead(PiPowerOffPin);
+  pi_status ? digitalWrite(PiPowerlinePin, LOW) : digitalWrite(PiPowerlinePin, HIGH);
+  pinMode(BoostFeedbackPin, INPUT);
+  pinMode(BoostPin, OUTPUT);
+  pinMode(BuckFeedbackPin, INPUT);
+  pinMode(BuckPin, OUTPUT);
+  TCCR2B = TCCR2B & B11111000 | B00000001; // pin 3 and 11 PWM frequency of 31372.55 Hz
+  analogWrite(BoostPin, BoostPwm);
+  analogWrite(BuckPin, BuckPwm);
+  pinMode(ButtonPin, INPUT_PULLUP);
+  pinMode(PiShutdownPin, OUTPUT);
+  pinMode(BoostPowerlinePin, OUTPUT);
+  pinMode(BuckPowerlinePin, OUTPUT);
+  pinMode(RFLinkPowerlinePin, OUTPUT);
+  pinMode(VPowerlinePin, OUTPUT);
+  Vcc = readVcc();
+  debouncer.attach(ButtonPin, INPUT_PULLUP);
+  debouncer.interval(DebounceInterval);
+#ifdef DEBUG
+  // initialize serial communication at 9600 bits per second:
+  Serial.begin(9600);
+  Serial.print("Vcc: ");
+  Serial.print(Vcc);
+  Serial.println(" mV");
+#endif
+}
+
+// ##################################### END OF SETUP #####################################
+
+// ##################################### LOOP #############################################
+
+void loop()
+{
+  current_time_millis = millis();
+
+  // Button press check
+  if (debouncer.update())
+  {
+    if (debouncer.fell())
+    {
+      button_press_millis = current_time_millis;
+#ifdef DEBUG
+      Serial.println("Button press detected!");
+#endif
+    }
+    else if (debouncer.rose())
+    {
+      on_button_release();
+#ifdef DEBUG
+      Serial.println("Button release detected!");
+#endif
+    }
+  }
+
+  if (pi_shutdown_pin_activated)
+  {
+    if (current_time_millis - pi_shutdown_pin_press_start >= pi_shutdown_pin_press_time)
+    {
+      release_pi_shutdown_pin();
+    }
+  }
+
+#ifdef ENABLE_BOOST
+  update_boost_converter();
+#endif
+
+#ifdef ENABLE_BUCK
+  update_buck_converter();
 #endif
 }
