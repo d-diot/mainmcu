@@ -9,6 +9,7 @@
 #define ENABLE_BOOST
 #define ENABLE_BUCK
 #define ENABLE_BUTTON
+//#define ENV_PLATFORMIO
 //#define DEBUG
 
 // Boost Converter parameters
@@ -43,7 +44,13 @@ int DebounceInterval = 5; //Debounce interval in milliseconds
 long Vcc;
 
 #ifdef ENABLE_BUTTON
+#ifdef ENV_PLATFORMIO
 #include <Bounce2.h>
+#endif
+#ifndef ENV_PLATFORMIO
+#include "libraries/Bounce2/Bounce2.cpp"
+#include "libraries/Bounce2/Bounce2.h"
+#endif
 Bounce debouncer = Bounce();
 #endif
 
