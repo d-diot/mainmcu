@@ -9,7 +9,8 @@
 #define ENV_PLATFORMIO
 //#define EXTERNAL_BOOST
 //#define EXTERNAL_BUCK
-//#define DEBUG
+#define DEBUG
+#define DEBUG_DELAY 1500
 
 // PIN definition
 int ButtonPin = 2;           //Button PIN: is the same for physical button and TTP223 capacitive touch switch with A closed and B open (see https://www.hackster.io/najad/how-to-use-a-ttp223-based-touch-switch-a04f7d).
@@ -508,4 +509,9 @@ void loop()
 
   // Check buck converter Vout and update PWM if necessary
   update_buck_converter();
+#ifdef DEBUG
+#ifdef DEBUG_DELAY
+  delay(DEBUG_DELAY);
+#endif
+#endif
 }
