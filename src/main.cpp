@@ -278,12 +278,15 @@ void activate_pi_shutdown_pin()
 
 void release_pi_shutdown_pin()
 {
-  digitalWrite(PiShutdownPin, LOW);
-  pi_shutdown_pin_press_start = 0;
-  pi_shutdown_pin_activated = false;
+  if (pi_shutdown_pin_activated)
+  {
+    digitalWrite(PiShutdownPin, LOW);
+    pi_shutdown_pin_press_start = 0;
+    pi_shutdown_pin_activated = false;
 #ifdef DEBUG
-  Serial.println("Pi shutdown pin released");
+    Serial.println("Pi shutdown pin released");
 #endif
+  }
 }
 
 void open_all_powerlines()
