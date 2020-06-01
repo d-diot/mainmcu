@@ -36,7 +36,7 @@ int BoostMaxVoltage = 12000;    //Maximum voltage for the board safety
 int BoostMaxPwm = 200;          //Maximum PWM value
 
 // Buck converter parameters
-int BuckTargetVoltage = 1700; //Desired output voltage of the buck converter (Millivolts)
+int BuckTargetVoltage = 2000; //Desired output voltage of the buck converter (Millivolts)
 long BuckR1 = 0;              //R1 value in Ohm (feedback circuit)
 long BuckR2 = 0;              //R2 value in Ohm (feedback circuit)
 int BuckPwm = 255;            //Initial value of PWM buck width
@@ -156,28 +156,28 @@ void update_pi_status()
   {
     pi_status = true;
 #ifdef DEBUG
-    Serial.print("Pi is ON: power line and poweroff pin in agreement");
+    Serial.println("Pi is ON: power line and poweroff pin in agreement");
 #endif
   }
   else if (!PiPowerlineStatus && !current_poweroff_pin_status)
   {
     pi_status = false;
 #ifdef DEBUG
-    Serial.print("Pi is OFF: power line and poweroff pin in agreement");
+    Serial.println("Pi is OFF: power line and poweroff pin in agreement");
 #endif
   }
   else if (PiPowerlineStatus && !current_poweroff_pin_status)
   {
     pi_status = true;
 #ifdef DEBUG
-    Serial.print("Pi is ON: power line is ON, but the Pi is signaling a power OFF state: probably a poweroff pin bounce during startup");
+    Serial.println("Pi is ON: power line is ON, but the Pi is signaling a power OFF state: probably a poweroff pin bounce during startup");
 #endif
   }
   else if (!PiPowerlineStatus && current_poweroff_pin_status)
   {
     pi_status = true;
 #ifdef DEBUG
-    Serial.print("Pi is ON: power line is OFF, but the Pi is signaling a powero ON state probably bypass jumper is closed");
+    Serial.println("Pi is ON: power line is OFF, but the Pi is signaling a powero ON state probably bypass jumper is closed");
 #endif
   }
 }
@@ -504,11 +504,10 @@ void loop()
     }
   }
 
-  // Check boost converter Vout and update PWM if necessary
+  // Check boost and boost converter Vout and update PWM if necessary
   update_boost_converter();
-
-  // Check buck converter Vout and update PWM if necessary
   update_buck_converter();
+
 #ifdef DEBUG
 #ifdef DEBUG_DELAY
   delay(DEBUG_DELAY);
