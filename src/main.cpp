@@ -47,6 +47,9 @@ int DebounceInterval = 5; //Debounce interval in milliseconds
 // Pi Shutdown pin parameters
 uint8_t pi_shutdown_pin_press_time = 100; // Time in milliseconds to keep the pi shutdown pin LOW
 
+// Pi power state monitoring time
+uint16_t pi_poweroff_bounce_time = 1500; // Time of active monitoring in milliseconds to wait before confirming the status of the on / off state of the Pi
+
 // ####################### END OF CONFIG ###########################################
 
 // ########################### INIT ################################################
@@ -54,12 +57,14 @@ uint8_t pi_shutdown_pin_press_time = 100; // Time in milliseconds to keep the pi
 long Vcc;
 bool pi_poweroff_pin_status;
 bool pi_shutdown_pin_activated = false;
+bool monitor_pi_status = false;
+bool pi_status;
 bool PiPowerlineStatus;
 bool BoostPowerlineStatus;
 bool BuckPowerlineStatus;
 bool RFLinkPowerlineStatus;
 bool VPowerlineStatus;
-unsigned long last_pi_poweroff_pin_read = 0;
+unsigned long last_pi_poweroff_pin_change_time = 0;
 unsigned long current_time_millis;
 unsigned long button_press_millis = 0;
 unsigned long pi_shutdown_pin_press_start = 0;
@@ -142,10 +147,38 @@ void check_power_lines_status()
 #endif
 }
 
-void update_pi_poweroff_pin_status()
+void update_pi_status()
 {
-  pi_poweroff_pin_status = digitalRead(PiPowerOffPin);
-  last_pi_poweroff_pin_read = current_time_millis;
+  check_power_lines_status();
+  bool current_poweroff_pin_status = digitalRead(PiPowerOffPin);
+  if (PiPowerlineStatus && current_poweroff_pin_status)
+  {
+    pi_status = true;
+#ifdef DEBUG
+    Serial.print("Pi is ON: power line and poweroff pin in agreement");
+#endif
+  }
+  else if (!PiPowerlineStatus && !current_poweroff_pin_status)
+  {
+    pi_status = false;
+#ifdef DEBUG
+    Serial.print("Pi is OFF: power line and poweroff pin in agreement");
+#endif
+  }
+  else if (PiPowerlineStatus && !current_poweroff_pin_status)
+  {
+    pi_status = true;
+#ifdef DEBUG
+    Serial.print("Pi is ON: power line is ON, but the Pi is signaling a power OFF state: probably a poweroff pin bounce during startup");
+#endif
+  }
+  else if (!PiPowerlineStatus && current_poweroff_pin_status)
+  {
+    pi_status = true;
+#ifdef DEBUG
+    Serial.print("Pi is ON: power line is OFF, but the Pi is signaling a powero ON state probably bypass jumper is closed");
+#endif
+  }
 }
 
 void update_boost_converter()
@@ -232,12 +265,15 @@ void update_buck_converter()
 
 void activate_pi_shutdown_pin()
 {
-  digitalWrite(PiShutdownPin, HIGH);
-  pi_shutdown_pin_press_start = millis();
-  pi_shutdown_pin_activated = true;
+  if (!pi_shutdown_pin_activated)
+  {
+    digitalWrite(PiShutdownPin, HIGH);
+    pi_shutdown_pin_press_start = millis();
+    pi_shutdown_pin_activated = true;
 #ifdef DEBUG
-  Serial.println("Pi shutdown pin activated");
+    Serial.println("Pi shutdown pin activated");
 #endif
+  }
 }
 
 void release_pi_shutdown_pin()
@@ -252,11 +288,27 @@ void release_pi_shutdown_pin()
 
 void open_all_powerlines()
 {
-  digitalWrite(PiPowerlinePin, LOW);
-  digitalWrite(BoostPowerlinePin, LOW);
-  digitalWrite(BuckPowerlinePin, LOW);
-  digitalWrite(RFLinkPowerlinePin, LOW);
-  digitalWrite(VPowerlinePin, LOW);
+  check_power_lines_status();
+  if (!PiPowerlineStatus)
+  {
+    digitalWrite(PiPowerlinePin, LOW);
+  }
+  if (!BoostPowerlineStatus)
+  {
+    digitalWrite(BoostPowerlinePin, LOW);
+  }
+  if (!BuckPowerlineStatus)
+  {
+    digitalWrite(BuckPowerlinePin, LOW);
+  }
+  if (!RFLinkPowerlineStatus)
+  {
+    digitalWrite(RFLinkPowerlinePin, LOW);
+  }
+  if (!VPowerlineStatus)
+  {
+    digitalWrite(VPowerlinePin, LOW);
+  }
   PiPowerlineStatus = true;
   BoostPowerlineStatus = true;
   BuckPowerlineStatus = true;
@@ -269,11 +321,27 @@ void open_all_powerlines()
 
 void close_all_powerlines()
 {
-  digitalWrite(PiPowerlinePin, HIGH);
-  digitalWrite(BoostPowerlinePin, HIGH);
-  digitalWrite(BuckPowerlinePin, HIGH);
-  digitalWrite(RFLinkPowerlinePin, HIGH);
-  digitalWrite(VPowerlinePin, HIGH);
+  check_power_lines_status();
+  if (PiPowerlineStatus)
+  {
+    digitalWrite(PiPowerlinePin, HIGH);
+  }
+  if (BoostPowerlineStatus)
+  {
+    digitalWrite(BoostPowerlinePin, HIGH);
+  }
+  if (BuckPowerlineStatus)
+  {
+    digitalWrite(BuckPowerlinePin, HIGH);
+  }
+  if (RFLinkPowerlineStatus)
+  {
+    digitalWrite(RFLinkPowerlinePin, HIGH);
+  }
+  if (VPowerlineStatus)
+  {
+    digitalWrite(VPowerlinePin, HIGH);
+  }
   PiPowerlineStatus = false;
   BoostPowerlineStatus = false;
   BuckPowerlineStatus = false;
@@ -292,7 +360,8 @@ void on_button_release()
 #ifdef DEBUG
     Serial.println("Button click type: short");
 #endif
-    check_pi_status() ? activate_pi_shutdown_pin() : open_all_powerlines();
+    update_pi_status();
+    pi_status ? activate_pi_shutdown_pin() : open_all_powerlines();
   }
   // Long press detection (> 3000 ms)
   else if (current_time_millis - button_press_millis >= 3000)
@@ -300,7 +369,8 @@ void on_button_release()
 #ifdef DEBUG
     Serial.println("Button click type: long");
 #endif
-    check_pi_status() ? close_all_powerlines() : open_all_powerlines();
+    update_pi_status();
+    pi_status ? close_all_powerlines() : open_all_powerlines();
   }
   else
   {
@@ -334,7 +404,20 @@ void setup()
   analogWrite(BoostPin, BoostPwm);
   analogWrite(BuckPin, BuckPwm);
   // Check the OnPowerPin status and power on or off the hub accordingly
-  digitalRead(OnPowerPin) ? close_all_powerlines : open_all_powerlines;
+  digitalRead(OnPowerPin) ? close_all_powerlines() : open_all_powerlines();
+  // Read the Pi poweroff pin status
+  pi_poweroff_pin_status = digitalRead(PiPowerOffPin);
+  last_pi_poweroff_pin_change_time = millis();
+  // Switch on all the power lines if the Pi is running
+  if (pi_poweroff_pin_status)
+  {
+    open_all_powerlines();
+  }
+  // Deactivate the Pi shutdown PIN
+  digitalWrite(PiShutdownPin, LOW);
+  // Update Pi status and monitor
+  update_pi_status();
+  monitor_pi_status = true;
   Vcc = readVcc();
   debouncer.attach(ButtonPin, INPUT_PULLUP);
   debouncer.interval(DebounceInterval);
@@ -362,6 +445,39 @@ void loop()
     if (current_time_millis - pi_shutdown_pin_press_start >= pi_shutdown_pin_press_time)
     {
       release_pi_shutdown_pin();
+    }
+  }
+
+  // Check the Pi Poweroff Pin
+  if (digitalRead(PiPowerOffPin) != pi_poweroff_pin_status)
+  {
+    pi_poweroff_pin_status = !pi_poweroff_pin_status;
+    last_pi_poweroff_pin_change_time = current_time_millis;
+    monitor_pi_status = true;
+#ifdef DEBUG
+    Serial.println("Pi poweroff pin status change detected: start monitoring");
+#endif
+  }
+
+  // Monitor the pi status and at the end turn it on or off
+  if (monitor_pi_status)
+  {
+    update_pi_status();
+    if (current_time_millis - last_pi_poweroff_pin_change_time >= pi_poweroff_bounce_time)
+    {
+      monitor_pi_status = false;
+      last_pi_poweroff_pin_change_time = 0;
+#ifdef DEBUG
+      Serial.println("Monitoring finished: take action");
+#endif
+      if (pi_status)
+      {
+        open_all_powerlines();
+      }
+      else
+      {
+        close_all_powerlines();
+      }
     }
   }
 
