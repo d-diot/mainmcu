@@ -50,7 +50,6 @@ uint16_t pi_poweroff_bounce_time = 1500; // Time of active monitoring in millise
 int ButtonPin = 2;           //Button PIN: is the same for physical button and TTP223 capacitive touch switch with jumper A closed and B open (see https://www.hackster.io/najad/how-to-use-a-ttp223-based-touch-switch-a04f7d).
 int BoostPin = 3;            //Digital pin D3 for boost PWM signal
 int PiPowerOffPin = 4;       //Pin connected to the Raspberry Pi poweroff signal PIN (GPIO6)
-int OnPowerPin = 5;          //Pin that controls the on / off state of the system when the board is powered for the first time
 int PiShutdownPin = 7;       //Pin connected to the Raspberry Pi shutdown PIN (GPIO5)
 int PiPowerlinePin = 8;      //Pin that controls the main power line (Raspberry Pi)
 int BuckPin = 11;            //Digital pin D11 for buck PWM signal
@@ -59,6 +58,7 @@ int StatusLedPin = 13;       //Pin that control the status LED
 int BuckPowerlinePin = A0;   //Pin that controls the buck converter power line
 int RFLinkPowerlinePin = A1; //Pin that controls the ATMega2560 (RFLink) power line
 int VPowerlinePin = A2;      //Pin that controls the 3.3V (AMS117) power line
+int OnPowerPin = A3;         //Pin that controls the on / off state of the system when the board is powered for the first time
 int BoostFeedbackPin = A6;   //The boost feedback input is A6 (pin 20)
 int BuckFeedbackPin = A7;    //The buck feedback input is A7 (pin 21)
 
