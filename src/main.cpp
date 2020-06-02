@@ -6,6 +6,7 @@
 
 // ########################### CONFIG ##########################################
 // Definition
+#define ENABLE_SLEEP
 #define ENV_PLATFORMIO
 #define EXTERNAL_BOOST
 #define EXTERNAL_BUCK
@@ -43,7 +44,10 @@ int BuckPwm = 255;            //Initial value of PWM buck width
 int BuckMinVoltage = 1500;    //Minimum voltage for the board safety
 
 // Button parameters
-int DebounceInterval = 5; //Debounce interval in milliseconds
+int DebounceInterval = 5;         //Debounce interval in milliseconds
+uint16_t ClickMinTime = 25;       //Min press time for a short click
+uint16_t ClickMaxTime = 500;      //Max press time for a short click
+uint16_t LongPressMinTime = 3000; //Min press time for a long press
 
 // Pi Shutdown pin parameters
 uint8_t pi_shutdown_pin_press_time = 100; // Time in milliseconds to keep the pi shutdown pin LOW
@@ -72,14 +76,28 @@ unsigned long button_release_millis = 0;
 unsigned long pi_shutdown_pin_press_start = 0;
 long BoostAcutalVoltage;
 long BuckAcutalVoltage;
+#ifdef ENABLE_SLEEP
+bool go_to_sleep = false;
+bool wake_up = true;
+#endif
 #ifdef ENV_PLATFORMIO
 #include <Bounce2.h>
+#ifdef ENABLE_SLEEP
+#include <Sleep_n0m1.h>
+#endif
 #endif
 #ifndef ENV_PLATFORMIO
 #include "libraries/Bounce2/Bounce2.cpp"
 #include "libraries/Bounce2/Bounce2.h"
+#ifdef ENABLE_SLEEP
+#include "libraries/Sleep_n0m1/Sleep_n0m1.cpp"
+#include "libraries/Sleep_n0m1/Sleep_n0m1.h"
+#endif
 #endif
 Bounce debouncer = Bounce();
+#ifdef ENABLE_SLEEP
+Sleep sleep;
+#endif
 
 // ########################## END OF INIT ##########################################
 
@@ -362,7 +380,7 @@ void on_button_release()
   monitor_pi_status = true;
   button_release_millis = current_time_millis;
   // Short press detection (50 -350 ms)
-  if (current_time_millis - button_press_millis >= 50 && current_time_millis - button_press_millis <= 350)
+  if (current_time_millis - button_press_millis >= ClickMinTime && current_time_millis - button_press_millis <= ClickMaxTime)
   {
 #ifdef DEBUG
     Serial.println("Button click type: short");
@@ -371,7 +389,7 @@ void on_button_release()
     pi_status ? activate_pi_shutdown_pin() : open_all_powerlines();
   }
   // Long press detection (> 3000 ms)
-  else if (current_time_millis - button_press_millis >= 3000)
+  else if (current_time_millis - button_press_millis >= LongPressMinTime)
   {
 #ifdef DEBUG
     Serial.println("Button click type: long");
@@ -447,6 +465,18 @@ void loop()
   // Timer Update
   current_time_millis = millis();
 
+  // Post wake up actions
+#ifdef ENABLE_SLEEP
+  if (wake_up)
+  {
+    wake_up = false;
+    detachInterrupt(digitalPinToInterrupt(ButtonPin));
+#ifdef DEBUG
+    Serial.println("Wake up: Interrupt detached");
+#endif
+  }
+#endif
+
   // Release Pi shutdown PIN if necessary
   if (pi_shutdown_pin_activated)
   {
@@ -465,27 +495,6 @@ void loop()
 #ifdef DEBUG
     Serial.println("Pi poweroff pin status change detected: start monitoring");
 #endif
-  }
-
-  // Monitor the pi status and at the end turn it on or off
-  if (monitor_pi_status)
-  {
-    update_pi_status();
-    if (current_time_millis - last_pi_poweroff_pin_change_time >= pi_poweroff_bounce_time && current_time_millis - button_release_millis >= pi_poweroff_bounce_time)
-    {
-      monitor_pi_status = false;
-#ifdef DEBUG
-      Serial.println("Monitoring finished: take action");
-#endif
-      if (pi_status)
-      {
-        open_all_powerlines();
-      }
-      else
-      {
-        close_all_powerlines();
-      }
-    }
   }
 
   // Look for power button press and release
@@ -507,6 +516,39 @@ void loop()
     }
   }
 
+  // Monitor the pi status and at the end of the bounce time turn on or off the power lines
+  if (monitor_pi_status)
+  {
+    update_pi_status();
+    if (current_time_millis - last_pi_poweroff_pin_change_time >= pi_poweroff_bounce_time && current_time_millis - button_release_millis >= pi_poweroff_bounce_time)
+    {
+      monitor_pi_status = false;
+#ifdef DEBUG
+      Serial.println("Monitoring finished: take action");
+#endif
+      if (pi_status)
+      {
+        open_all_powerlines();
+#ifdef DEBUG
+        Serial.println("Action taken: all power lines opened");
+#endif
+      }
+      else
+      {
+        close_all_powerlines();
+#ifdef DEBUG
+        Serial.println("Action taken: all power lines closed");
+#endif
+#ifdef ENABLE_SLEEP
+        go_to_sleep = true;
+#ifdef DEBUG
+        Serial.println("Action taken: sleep triggered");
+#endif
+#endif
+      }
+    }
+  }
+
   // Check boost and boost converter Vout and update PWM if necessary
   update_boost_converter();
   update_buck_converter();
@@ -515,5 +557,19 @@ void loop()
 #ifdef DEBUG_DELAY
   delay(DEBUG_DELAY);
 #endif
+#endif
+
+#ifdef ENABLE_SLEEP
+  if (go_to_sleep)
+  {
+    go_to_sleep = false;
+#ifdef DEBUG
+    Serial.println("Sleeping");
+#endif
+    delay(500);
+    sleep.pwrDownMode();                     //set sleep mode
+    sleep.sleepPinInterrupt(ButtonPin, LOW); //(interrupt Pin Number, interrupt State)
+  }
+
 #endif
 }
