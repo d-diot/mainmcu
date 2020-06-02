@@ -6,12 +6,12 @@
 
 // ########################### CONFIG ##########################################
 // Definition
-#define ENABLE_SLEEP
 #define ENV_PLATFORMIO
-#define EXTERNAL_BOOST
-#define EXTERNAL_BUCK
-#define DEBUG
+//#define EXTERNAL_BOOST
+//#define EXTERNAL_BUCK
+//#define DEBUG
 //#define DEBUG_DELAY 1500
+//#define ENABLE_SLEEP
 
 // PIN definition
 int ButtonPin = 2;           //Button PIN: is the same for physical button and TTP223 capacitive touch switch with A closed and B open (see https://www.hackster.io/najad/how-to-use-a-ttp223-based-touch-switch-a04f7d).
@@ -386,7 +386,20 @@ void on_button_release()
     Serial.println("Button click type: short");
 #endif
     update_pi_status();
-    pi_status ? activate_pi_shutdown_pin() : open_all_powerlines();
+    if (pi_status)
+    {
+      activate_pi_shutdown_pin();
+#ifdef DEBUG
+      Serial.println("Action: Pi is ON, shutdown triggered");
+#endif
+    }
+    else
+    {
+      open_all_powerlines();
+#ifdef DEBUG
+      Serial.println("Action: Pi is OFF, opening all power lines");
+#endif
+    }
   }
   // Long press detection (> 3000 ms)
   else if (current_time_millis - button_press_millis >= LongPressMinTime)
@@ -395,7 +408,20 @@ void on_button_release()
     Serial.println("Button click type: long");
 #endif
     check_power_lines_status();
-    PiPowerlineStatus ? close_all_powerlines() : open_all_powerlines();
+    if (PiPowerlineStatus)
+    {
+      close_all_powerlines();
+#ifdef DEBUG
+      Serial.println("Action: PWR lines are ON, closing them all");
+#endif
+    }
+    else
+    {
+      open_all_powerlines();
+#ifdef DEBUG
+      Serial.println("Action: PWR lines are OFF, opening them all");
+#endif
+    }
   }
   else
   {
@@ -563,6 +589,17 @@ void loop()
   if (go_to_sleep)
   {
     go_to_sleep = false;
+    wake_up = true;
+#ifndef EXTERNAL_BUCK
+    analogWrite(BuckPin, 0);
+    digitalWrite(BuckPin, HIGH);
+    digitalRead(BuckFeedbackPin);
+#endif
+#ifndef EXTERNAL_BOOST
+    analogWrite(BoostPin, 0);
+    digitalWrite(BoostPin, LOW);
+    digitalRead(BoostFeedbackPin);
+#endif
 #ifdef DEBUG
     Serial.println("Sleeping");
 #endif
@@ -570,6 +607,5 @@ void loop()
     sleep.pwrDownMode();                     //set sleep mode
     sleep.sleepPinInterrupt(ButtonPin, LOW); //(interrupt Pin Number, interrupt State)
   }
-
 #endif
 }
