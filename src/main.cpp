@@ -7,10 +7,10 @@
 // ########################### CONFIG ##########################################
 // Definition
 #define ENV_PLATFORMIO
-//#define EXTERNAL_BOOST
-//#define EXTERNAL_BUCK
+#define EXTERNAL_BOOST
+#define EXTERNAL_BUCK
 #define DEBUG
-#define DEBUG_DELAY 1500
+//#define DEBUG_DELAY 1500
 
 // PIN definition
 int ButtonPin = 2;           //Button PIN: is the same for physical button and TTP223 capacitive touch switch with A closed and B open (see https://www.hackster.io/najad/how-to-use-a-ttp223-based-touch-switch-a04f7d).
@@ -68,6 +68,7 @@ bool VPowerlineStatus;
 unsigned long last_pi_poweroff_pin_change_time = 0;
 unsigned long current_time_millis;
 unsigned long button_press_millis = 0;
+unsigned long button_release_millis = 0;
 unsigned long pi_shutdown_pin_press_start = 0;
 long BoostAcutalVoltage;
 long BuckAcutalVoltage;
@@ -168,9 +169,9 @@ void update_pi_status()
   }
   else if (PiPowerlineStatus && !current_poweroff_pin_status)
   {
-    pi_status = true;
+    pi_status = false;
 #ifdef DEBUG
-    Serial.println("Pi is ON: power line is ON, but the Pi is signaling a power OFF state: probably a poweroff pin bounce during startup");
+    Serial.println("Pi is OFF: power line is ON, but the Pi is signaling a power OFF state");
 #endif
   }
   else if (!PiPowerlineStatus && current_poweroff_pin_status)
@@ -358,6 +359,8 @@ void close_all_powerlines()
 
 void on_button_release()
 {
+  monitor_pi_status = true;
+  button_release_millis = current_time_millis;
   // Short press detection (50 -350 ms)
   if (current_time_millis - button_press_millis >= 50 && current_time_millis - button_press_millis <= 350)
   {
@@ -373,11 +376,13 @@ void on_button_release()
 #ifdef DEBUG
     Serial.println("Button click type: long");
 #endif
-    update_pi_status();
-    pi_status ? close_all_powerlines() : open_all_powerlines();
+    check_power_lines_status();
+    PiPowerlineStatus ? close_all_powerlines() : open_all_powerlines();
   }
   else
   {
+    monitor_pi_status = false;
+    button_release_millis = 0;
 #ifdef DEBUG
     Serial.println("Button click type: unknown, do nothing");
 #endif
@@ -419,8 +424,7 @@ void setup()
   }
   // Deactivate the Pi shutdown PIN
   digitalWrite(PiShutdownPin, LOW);
-  // Update Pi status and monitor
-  update_pi_status();
+  // Monitor pi status
   monitor_pi_status = true;
   Vcc = readVcc();
   debouncer.attach(ButtonPin, INPUT_PULLUP);
@@ -467,10 +471,9 @@ void loop()
   if (monitor_pi_status)
   {
     update_pi_status();
-    if (current_time_millis - last_pi_poweroff_pin_change_time >= pi_poweroff_bounce_time)
+    if (current_time_millis - last_pi_poweroff_pin_change_time >= pi_poweroff_bounce_time && current_time_millis - button_release_millis >= pi_poweroff_bounce_time)
     {
       monitor_pi_status = false;
-      last_pi_poweroff_pin_change_time = 0;
 #ifdef DEBUG
       Serial.println("Monitoring finished: take action");
 #endif
@@ -497,10 +500,10 @@ void loop()
     }
     else if (debouncer.rose())
     {
-      on_button_release();
 #ifdef DEBUG
       Serial.println("Button release detected!");
 #endif
+      on_button_release();
     }
   }
 
