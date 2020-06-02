@@ -7,6 +7,7 @@
 // ########################### CONFIG ##########################################
 // Definition
 #define ENV_PLATFORMIO
+#define ENABLE_STATUS_LED
 //#define EXTERNAL_BOOST
 //#define EXTERNAL_BUCK
 //#define DEBUG
@@ -21,6 +22,7 @@ int PiShutdownPin = 7;       //Pin connected to the Raspberry Pi shutdown PIN (G
 int PiPowerlinePin = 8;      //Pin that controls the main power line (Raspberry Pi)
 int BuckPin = 11;            //Digital pin D11 for buck PWM signal
 int BoostPowerlinePin = 12;  //Pin that controls the boost converter power line
+int StatusLedPin = 13;       //Pin that control the status LED
 int BuckPowerlinePin = A0;   //Pin that controls the buck converter power line
 int RFLinkPowerlinePin = A1; //Pin that controls the ATMega2560 (RFLink) power line
 int VPowerlinePin = A2;      //Pin that controls the 3.3V (AMS117) power line
@@ -453,6 +455,7 @@ void setup()
   pinMode(BuckPowerlinePin, OUTPUT);
   pinMode(RFLinkPowerlinePin, OUTPUT);
   pinMode(VPowerlinePin, OUTPUT);
+  pinMode(StatusLedPin, OUTPUT);
   TCCR2B = TCCR2B & B11111000 | B00000001; // pin 3 and 11 PWM frequency of 31372.55 Hz
   analogWrite(BoostPin, BoostPwm);
   analogWrite(BuckPin, BuckPwm);
@@ -555,6 +558,9 @@ void loop()
       if (pi_status)
       {
         open_all_powerlines();
+#ifdef ENABLE_STATUS_LED
+        digitalWrite(StatusLedPin, LOW);
+#endif
 #ifdef DEBUG
         Serial.println("Action taken: all power lines opened");
 #endif
@@ -562,6 +568,9 @@ void loop()
       else
       {
         close_all_powerlines();
+#ifdef ENABLE_STATUS_LED
+        digitalWrite(StatusLedPin, HIGH);
+#endif
 #ifdef DEBUG
         Serial.println("Action taken: all power lines closed");
 #endif
