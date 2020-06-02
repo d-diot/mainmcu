@@ -5,51 +5,36 @@
 #include <Arduino.h>
 
 // ########################### CONFIG ##########################################
-// Definition
-#define ENV_PLATFORMIO
-#define ENABLE_STATUS_LED
-//#define EXTERNAL_BOOST
-//#define EXTERNAL_BUCK
-//#define DEBUG
-//#define DEBUG_DELAY 1500
-//#define ENABLE_SLEEP
 
-// PIN definition
-int ButtonPin = 2;           //Button PIN: is the same for physical button and TTP223 capacitive touch switch with A closed and B open (see https://www.hackster.io/najad/how-to-use-a-ttp223-based-touch-switch-a04f7d).
-int BoostPin = 3;            //Digital pin D3 for boost PWM signal
-int PiPowerOffPin = 4;       //Pin connected to the Raspberry Pi poweroff signal PIN (GPIO6)
-int PiShutdownPin = 7;       //Pin connected to the Raspberry Pi shutdown PIN (GPIO5)
-int PiPowerlinePin = 8;      //Pin that controls the main power line (Raspberry Pi)
-int BuckPin = 11;            //Digital pin D11 for buck PWM signal
-int BoostPowerlinePin = 12;  //Pin that controls the boost converter power line
-int StatusLedPin = 13;       //Pin that control the status LED
-int BuckPowerlinePin = A0;   //Pin that controls the buck converter power line
-int RFLinkPowerlinePin = A1; //Pin that controls the ATMega2560 (RFLink) power line
-int VPowerlinePin = A2;      //Pin that controls the 3.3V (AMS117) power line
-int OnPowerPin = A3;         //Pin that controls the on / off state of the system when the board is powered for the first time
-int BoostFeedbackPin = A6;   //The boost feedback input is A6 (pin 20)
-int BuckFeedbackPin = A7;    //The buck feedback input is A7 (pin 21)
+// General definition
+#define ENV_PLATFORMIO    //Uncomment to make the source code compatible with Platformio and not with Arduino-mk.
+#define ENABLE_STATUS_LED //Uncomment to enable the status LED (On when the pi is OFF and viceversa)
+//#define EXTERNAL_BOOST    //Uncomment to disable the on-board boost converter and use an external ones
+//#define EXTERNAL_BUCK     //Uncomment to disable the on-board boost converter and use an external ones
+//#define DEBUG             //Uncomment to enable the debug messages in the serial output
+//#define DEBUG_DELAY 1500  //Uncomment to slow down the code speed in debug mode
+//#define ENABLE_SLEEP      //EXPERIMENTAL: uncomment to enable MCU sleep when Pi is OFF. Works only with external buck and boost converters
 
 // Boost Converter parameters
 int BoostTargetVoltage = 10000; //Desired output voltage of the boost converter (Millivolts)
 long BoostR1 = 68000;           //R1 value in Ohm (feedback circuit)
 long BoostR2 = 47000;           //R2 value in Ohm (feedback circuit)
-int BoostPwm = 0;               //Initial value of PWM boost width
-int BoostMaxVoltage = 12000;    //Maximum voltage for the board safety
-int BoostMaxPwm = 200;          //Maximum PWM value
+int BoostPwm = 0;               //Initial value of boost PWM (0 = off)
+int BoostMaxVoltage = 12000;    //Maximum voltage allowed by the circuit design
+int BoostMaxPwm = 200;          //Maximum PWM value (safety features)
 
 // Buck converter parameters
 int BuckTargetVoltage = 2000; //Desired output voltage of the buck converter (Millivolts)
-long BuckR1 = 0;              //R1 value in Ohm (feedback circuit)
-long BuckR2 = 0;              //R2 value in Ohm (feedback circuit)
-int BuckPwm = 255;            //Initial value of PWM buck width
-int BuckMinVoltage = 1500;    //Minimum voltage for the board safety
+long BuckR1 = 0;              //R1 value in Ohm (feedback circuit, 0 = no feedback circuit)
+long BuckR2 = 0;              //R2 value in Ohm (feedback circuit, 0 = no feedback circuit)
+int BuckPwm = 255;            //Initial value of buck PWM (255 = off)
+int BuckMinVoltage = 1500;    //Minimum voltage allowed by the circuit design
 
 // Button parameters
 int DebounceInterval = 5;         //Debounce interval in milliseconds
-uint16_t ClickMinTime = 25;       //Min press time for a short click
-uint16_t ClickMaxTime = 500;      //Max press time for a short click
-uint16_t LongPressMinTime = 3000; //Min press time for a long press
+uint16_t ClickMinTime = 25;       //Min press time that defines a short click
+uint16_t ClickMaxTime = 500;      //Max press time that defines a short click
+uint16_t LongPressMinTime = 3000; //Min press time that defines a long press
 
 // Pi Shutdown pin parameters
 uint8_t pi_shutdown_pin_press_time = 100; // Time in milliseconds to keep the pi shutdown pin LOW
@@ -60,6 +45,22 @@ uint16_t pi_poweroff_bounce_time = 1500; // Time of active monitoring in millise
 // ####################### END OF CONFIG ###########################################
 
 // ########################### INIT ################################################
+
+// PIN definition
+int ButtonPin = 2;           //Button PIN: is the same for physical button and TTP223 capacitive touch switch with jumper A closed and B open (see https://www.hackster.io/najad/how-to-use-a-ttp223-based-touch-switch-a04f7d).
+int BoostPin = 3;            //Digital pin D3 for boost PWM signal
+int PiPowerOffPin = 4;       //Pin connected to the Raspberry Pi poweroff signal PIN (GPIO6)
+int OnPowerPin = 5;          //Pin that controls the on / off state of the system when the board is powered for the first time
+int PiShutdownPin = 7;       //Pin connected to the Raspberry Pi shutdown PIN (GPIO5)
+int PiPowerlinePin = 8;      //Pin that controls the main power line (Raspberry Pi)
+int BuckPin = 11;            //Digital pin D11 for buck PWM signal
+int BoostPowerlinePin = 12;  //Pin that controls the boost converter power line
+int StatusLedPin = 13;       //Pin that control the status LED
+int BuckPowerlinePin = A0;   //Pin that controls the buck converter power line
+int RFLinkPowerlinePin = A1; //Pin that controls the ATMega2560 (RFLink) power line
+int VPowerlinePin = A2;      //Pin that controls the 3.3V (AMS117) power line
+int BoostFeedbackPin = A6;   //The boost feedback input is A6 (pin 20)
+int BuckFeedbackPin = A7;    //The buck feedback input is A7 (pin 21)
 
 long Vcc;
 bool pi_poweroff_pin_status;
