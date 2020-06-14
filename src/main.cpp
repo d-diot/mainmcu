@@ -17,10 +17,10 @@
 
 // Boost Converter parameters
 int BoostTargetVoltage = 10000; //Desired output voltage of the boost converter (Millivolts)
-long BoostR1 = 68000;           //R1 value in Ohm (feedback circuit)
-long BoostR2 = 47000;           //R2 value in Ohm (feedback circuit)
+long BoostR1 = 10000;           //R1 value in Ohm (feedback circuit)
+long BoostR2 = 3300;            //R2 value in Ohm (feedback circuit)
 int BoostPwm = 0;               //Initial value of boost PWM (0 = off)
-int BoostMaxVoltage = 12000;    //Maximum voltage allowed by the circuit design
+int BoostMaxVoltage = 20000;    //Maximum voltage allowed by the circuit design (Millivolts)
 int BoostMaxPwm = 200;          //Maximum PWM value (safety features)
 
 // Buck converter parameters
@@ -37,7 +37,7 @@ uint16_t ClickMaxTime = 500;      //Max press time that defines a short click
 uint16_t LongPressMinTime = 3000; //Min press time that defines a long press
 
 // Pi Shutdown pin parameters
-uint8_t pi_shutdown_pin_press_time = 100; // Time in milliseconds to keep the pi shutdown pin LOW
+uint8_t pi_shutdown_pin_press_time = 200; // Time in milliseconds to keep the pi shutdown pin LOW
 
 // Pi power state monitoring time
 uint16_t pi_poweroff_bounce_time = 1500; // Time of active monitoring in milliseconds to wait before confirming the status of the on / off state of the Pi
@@ -47,20 +47,20 @@ uint16_t pi_poweroff_bounce_time = 1500; // Time of active monitoring in millise
 // ########################### INIT ################################################
 
 // PIN definition
-int ButtonPin = 2;           //Button PIN: is the same for physical button and TTP223 capacitive touch switch with jumper A closed and B open (see https://www.hackster.io/najad/how-to-use-a-ttp223-based-touch-switch-a04f7d).
-int BoostPin = 3;            //Digital pin D3 for boost PWM signal
-int PiPowerOffPin = 4;       //Pin connected to the Raspberry Pi poweroff signal PIN (GPIO6)
-int PiShutdownPin = 7;       //Pin connected to the Raspberry Pi shutdown PIN (GPIO5)
-int PiPowerlinePin = 8;      //Pin that controls the main power line (Raspberry Pi)
-int BuckPin = 11;            //Digital pin D11 for buck PWM signal
-int BoostPowerlinePin = 12;  //Pin that controls the boost converter power line
-int StatusLedPin = 13;       //Pin that control the status LED
-int BuckPowerlinePin = A0;   //Pin that controls the buck converter power line
-int RFLinkPowerlinePin = A1; //Pin that controls the ATMega2560 (RFLink) power line
-int VPowerlinePin = A2;      //Pin that controls the 3.3V (AMS117) power line
-int OnPowerPin = A3;         //Pin that controls the on / off state of the system when the board is powered for the first time
-int BoostFeedbackPin = A6;   //The boost feedback input is A6 (pin 20)
-int BuckFeedbackPin = A7;    //The buck feedback input is A7 (pin 21)
+int ButtonPin = 2;          //Button PIN: is the same for physical button and TTP223 capacitive touch switch with jumper A closed and B open (see https://www.hackster.io/najad/how-to-use-a-ttp223-based-touch-switch-a04f7d).
+int BoostPin = 3;           //Digital pin D3 for boost PWM signal
+int PiPowerOffPin = 4;      //Pin connected to the Raspberry Pi poweroff signal PIN (GPIO6)
+int PiShutdownPin = 7;      //Pin connected to the Raspberry Pi shutdown PIN (GPIO5)
+int PiPowerlinePin = 8;     //Pin that controls the main power line (Raspberry Pi)
+int BuckPin = 11;           //Digital pin D11 for buck PWM signal
+int BoostPowerlinePin = 12; //Pin that controls the buck and oost converter power line
+int StatusLedPin = 13;      //Pin that control the status LED
+//int BuckPowerlinePin = A0;   //Pin that controls the buck converter power line
+//int RFLinkPowerlinePin = A1; //Pin that controls the ATMega2560 (RFLink) power line
+int VPowerlinePin = A0;    //Pin that controls the +5V and 3.3V (AMS117) power line
+int OnPowerPin = A1;       //Pin that controls the on / off state of the system when the board is powered for the first time
+int BoostFeedbackPin = A6; //The boost feedback input is A6 (pin 20)
+int BuckFeedbackPin = A7;  //The buck feedback input is A7 (pin 21)
 
 long Vcc;
 bool pi_poweroff_pin_status;
@@ -69,8 +69,8 @@ bool monitor_pi_status = false;
 bool pi_status;
 bool PiPowerlineStatus;
 bool BoostPowerlineStatus;
-bool BuckPowerlineStatus;
-bool RFLinkPowerlineStatus;
+//bool BuckPowerlineStatus;
+//bool RFLinkPowerlineStatus;
 bool VPowerlineStatus;
 unsigned long last_pi_poweroff_pin_change_time = 0;
 unsigned long current_time_millis;
@@ -153,8 +153,8 @@ void check_power_lines_status()
 {
   PiPowerlineStatus = !digitalRead(PiPowerlinePin);
   BoostPowerlineStatus = !digitalRead(BoostPowerlinePin);
-  BuckPowerlineStatus = !digitalRead(BuckPowerlineStatus);
-  RFLinkPowerlineStatus = !digitalRead(RFLinkPowerlineStatus);
+  //  BuckPowerlineStatus = !digitalRead(BuckPowerlineStatus);
+  //  RFLinkPowerlineStatus = !digitalRead(RFLinkPowerlineStatus);
   VPowerlineStatus = !digitalRead(VPowerlineStatus);
 #ifdef DEBUG
   Serial.print("Pi power line status: ");
@@ -252,7 +252,7 @@ void update_buck_converter()
 #ifdef DEBUG
   Serial.println("Buck converter");
 #endif
-  if (BuckTargetVoltage < BuckMinVoltage || !BuckPowerlineStatus)
+  if (BuckTargetVoltage < BuckMinVoltage || !BoostPowerlineStatus)
   {
     BuckPwm = 255;
     digitalWrite(BuckPin, HIGH);
@@ -323,22 +323,22 @@ void open_all_powerlines()
   {
     digitalWrite(BoostPowerlinePin, LOW);
   }
-  if (!BuckPowerlineStatus)
-  {
-    digitalWrite(BuckPowerlinePin, LOW);
-  }
-  if (!RFLinkPowerlineStatus)
-  {
-    digitalWrite(RFLinkPowerlinePin, LOW);
-  }
+  //  if (!BuckPowerlineStatus)
+  //  {
+  //    digitalWrite(BuckPowerlinePin, LOW);
+  //  }
+  //  if (!RFLinkPowerlineStatus)
+  //  {
+  //    digitalWrite(RFLinkPowerlinePin, LOW);
+  //  }
   if (!VPowerlineStatus)
   {
     digitalWrite(VPowerlinePin, LOW);
   }
   PiPowerlineStatus = true;
   BoostPowerlineStatus = true;
-  BuckPowerlineStatus = true;
-  RFLinkPowerlineStatus = true;
+  //  BuckPowerlineStatus = true;
+  //  RFLinkPowerlineStatus = true;
   VPowerlineStatus = true;
 #ifdef DEBUG
   Serial.println("All power lines opened");
@@ -356,22 +356,22 @@ void close_all_powerlines()
   {
     digitalWrite(BoostPowerlinePin, HIGH);
   }
-  if (BuckPowerlineStatus)
-  {
-    digitalWrite(BuckPowerlinePin, HIGH);
-  }
-  if (RFLinkPowerlineStatus)
-  {
-    digitalWrite(RFLinkPowerlinePin, HIGH);
-  }
+  //  if (BuckPowerlineStatus)
+  //  {
+  //    digitalWrite(BuckPowerlinePin, HIGH);
+  //  }
+  //  if (RFLinkPowerlineStatus)
+  //  {
+  //    digitalWrite(RFLinkPowerlinePin, HIGH);
+  //  }
   if (VPowerlineStatus)
   {
     digitalWrite(VPowerlinePin, HIGH);
   }
   PiPowerlineStatus = false;
   BoostPowerlineStatus = false;
-  BuckPowerlineStatus = false;
-  RFLinkPowerlineStatus = false;
+  //  BuckPowerlineStatus = false;
+  //  RFLinkPowerlineStatus = false;
   VPowerlineStatus = false;
 #ifdef DEBUG
   Serial.println("All power lines closed");
@@ -453,8 +453,8 @@ void setup()
   pinMode(BuckPin, OUTPUT);
   pinMode(PiShutdownPin, OUTPUT);
   pinMode(BoostPowerlinePin, OUTPUT);
-  pinMode(BuckPowerlinePin, OUTPUT);
-  pinMode(RFLinkPowerlinePin, OUTPUT);
+  //  pinMode(BuckPowerlinePin, OUTPUT);
+  //  pinMode(RFLinkPowerlinePin, OUTPUT);
   pinMode(VPowerlinePin, OUTPUT);
   pinMode(StatusLedPin, OUTPUT);
   TCCR2B = TCCR2B & B11111000 | B00000001; // pin 3 and 11 PWM frequency of 31372.55 Hz
