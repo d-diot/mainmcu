@@ -24,7 +24,7 @@ int BoostMaxVoltage = 20000;    //Maximum voltage allowed by the circuit design 
 int BoostMaxPwm = 200;          //Maximum PWM value (safety features)
 
 // Buck converter parameters
-int BuckTargetVoltage = 2000; //Desired output voltage of the buck converter (Millivolts)
+int BuckTargetVoltage = 1700; //Desired output voltage of the buck converter (Millivolts)
 long BuckR1 = 0;              //R1 value in Ohm (feedback circuit, 0 = no feedback circuit)
 long BuckR2 = 0;              //R2 value in Ohm (feedback circuit, 0 = no feedback circuit)
 int BuckPwm = 255;            //Initial value of buck PWM (255 = off)
