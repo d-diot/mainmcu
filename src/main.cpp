@@ -11,7 +11,8 @@
 #define ENABLE_STATUS_LED //Uncomment to enable the status LED (On when the pi is OFF and viceversa)
 //#define EXTERNAL_BOOST    //Uncomment to disable the on-board boost converter and use an external ones
 //#define EXTERNAL_BUCK     //Uncomment to disable the on-board boost converter and use an external ones
-//#define DEBUG             //Uncomment to enable the debug messages in the serial output
+#define DEBUG //Uncomment to enable the debug messages in the serial output
+//#define BB_DEBUG          //Uncomment to enable the buck and boost debug messages in the serial output
 //#define DEBUG_DELAY 1500  //Uncomment to slow down the code speed in debug mode
 //#define ENABLE_SLEEP      //EXPERIMENTAL: uncomment to enable MCU sleep when Pi is OFF. Works only with external buck and boost converters
 
@@ -37,10 +38,13 @@ uint16_t ClickMaxTime = 500;      //Max press time that defines a short click
 uint16_t LongPressMinTime = 3000; //Min press time that defines a long press
 
 // Pi Shutdown pin parameters
-uint8_t pi_shutdown_pin_press_time = 200; // Time in milliseconds to keep the pi shutdown pin LOW
+unsigned long pi_shutdown_pin_press_time = 300; // Time in milliseconds to keep the pi shutdown pin LOW
 
 // Pi power state monitoring time
-uint16_t pi_poweroff_bounce_time = 1500; // Time of active monitoring in milliseconds to wait before confirming the status of the on / off state of the Pi
+uint16_t pi_poweroff_bounce_time = 5000; // Time of active monitoring in milliseconds to wait before confirming the status of the on / off state of the Pi
+
+// Power line opening delay time
+unsigned long power_lines_wait_time = 500; // Time to wait after opening a power line. Necessary to avoid peak of current adsorption
 
 // ####################### END OF CONFIG ###########################################
 
@@ -55,22 +59,18 @@ int PiPowerlinePin = 8;     //Pin that controls the main power line (Raspberry P
 int BuckPin = 11;           //Digital pin D11 for buck PWM signal
 int BoostPowerlinePin = 12; //Pin that controls the buck and oost converter power line
 int StatusLedPin = 13;      //Pin that control the status LED
-//int BuckPowerlinePin = A0;   //Pin that controls the buck converter power line
-//int RFLinkPowerlinePin = A1; //Pin that controls the ATMega2560 (RFLink) power line
-int VPowerlinePin = A0;    //Pin that controls the +5V and 3.3V (AMS117) power line
-int OnPowerPin = A1;       //Pin that controls the on / off state of the system when the board is powered for the first time
-int BoostFeedbackPin = A6; //The boost feedback input is A6 (pin 20)
-int BuckFeedbackPin = A7;  //The buck feedback input is A7 (pin 21)
+int VPowerlinePin = A0;     //Pin that controls the +5V and 3.3V (AMS117) power line
+int OnPowerPin = A1;        //Pin that controls the on / off state of the system when the board is powered for the first time
+int BoostFeedbackPin = A6;  //The boost feedback input is A6 (pin 20)
+int BuckFeedbackPin = A7;   //The buck feedback input is A7 (pin 21)
 
 long Vcc;
 bool pi_poweroff_pin_status;
 bool pi_shutdown_pin_activated = false;
 bool monitor_pi_status = false;
-bool pi_status;
+uint8_t pi_status; // 0=OFF, 1=ON, 2=Standby, 3=power line OFF and Pi poweroff pin ON
 bool PiPowerlineStatus;
 bool BoostPowerlineStatus;
-//bool BuckPowerlineStatus;
-//bool RFLinkPowerlineStatus;
 bool VPowerlineStatus;
 unsigned long last_pi_poweroff_pin_change_time = 0;
 unsigned long current_time_millis;
@@ -141,7 +141,7 @@ long read_voltage(int PinNumber, long R1, long R2)
   {
     vout = vout * (R1 + R2) / R2;
   }
-#ifdef DEBUG
+#ifdef BB_DEBUG
   Serial.print("Vout: ");
   Serial.print(vout);
   Serial.println(" mV");
@@ -153,18 +153,12 @@ void check_power_lines_status()
 {
   PiPowerlineStatus = !digitalRead(PiPowerlinePin);
   BoostPowerlineStatus = !digitalRead(BoostPowerlinePin);
-  //  BuckPowerlineStatus = !digitalRead(BuckPowerlineStatus);
-  //  RFLinkPowerlineStatus = !digitalRead(RFLinkPowerlineStatus);
   VPowerlineStatus = !digitalRead(VPowerlineStatus);
 #ifdef DEBUG
   Serial.print("Pi power line status: ");
   Serial.println(PiPowerlineStatus);
   Serial.print("Boost power line status: ");
   Serial.println(BoostPowerlineStatus);
-  Serial.print("Buck power line status: ");
-  Serial.println(BuckPowerlineStatus);
-  Serial.print("RFLink power line status: ");
-  Serial.println(RFLinkPowerlineStatus);
   Serial.print("3.3V and 5V main power lines status: ");
   Serial.println(VPowerlineStatus);
 #endif
@@ -176,30 +170,30 @@ void update_pi_status()
   bool current_poweroff_pin_status = digitalRead(PiPowerOffPin);
   if (PiPowerlineStatus && current_poweroff_pin_status)
   {
-    pi_status = true;
+    pi_status = 1;
 #ifdef DEBUG
     Serial.println("Pi is ON: power line and poweroff pin in agreement");
 #endif
   }
   else if (!PiPowerlineStatus && !current_poweroff_pin_status)
   {
-    pi_status = false;
+    pi_status = 0;
 #ifdef DEBUG
     Serial.println("Pi is OFF: power line and poweroff pin in agreement");
 #endif
   }
   else if (PiPowerlineStatus && !current_poweroff_pin_status)
   {
-    pi_status = false;
+    pi_status = 2;
 #ifdef DEBUG
-    Serial.println("Pi is OFF: power line is ON, but the Pi is signaling a power OFF state");
+    Serial.println("Pi is ON but in standby: power line is ON, but the Pi is signaling a power OFF state, probably a shutdown is finished");
 #endif
   }
   else if (!PiPowerlineStatus && current_poweroff_pin_status)
   {
-    pi_status = true;
+    pi_status = 3;
 #ifdef DEBUG
-    Serial.println("Pi is ON: power line is OFF, but the Pi is signaling a powero ON state probably bypass jumper is closed");
+    Serial.println("Pi is OFF: power line is OFF, but the Pi is signaling a false power ON state due to the pulldown resistor R7");
 #endif
   }
 }
@@ -208,14 +202,14 @@ void update_boost_converter()
 {
 #ifndef EXTERNAL_BOOST
   //If the desired value is HIGHER than the real value, we increase PWM width
-#ifdef DEBUG
+#ifdef BB_DEBUG
   Serial.println("Boost converter");
 #endif
   if (BoostTargetVoltage > BoostMaxVoltage || !BoostPowerlineStatus)
   {
     BoostPwm = 0;
     digitalWrite(BoostPin, LOW);
-#ifdef DEBUG
+#ifdef BB_DEBUG
     Serial.println("Target voltage to high or power line off: shutdown!");
 #endif
     return;
@@ -231,7 +225,7 @@ void update_boost_converter()
     BoostPwm = BoostPwm - 1;
     BoostPwm = constrain(BoostPwm, 0, BoostMaxPwm);
   }
-#ifdef DEBUG
+#ifdef BB_DEBUG
   Serial.print("PWM: ");
   Serial.println(BoostPwm);
 #endif
@@ -249,14 +243,14 @@ void update_buck_converter()
 {
 #ifndef EXTERNAL_BUCK
   //If the desired value is HIGHER than the real value, we decrease PWM width (p-mos, reverse logic)
-#ifdef DEBUG
+#ifdef BB_DEBUG
   Serial.println("Buck converter");
 #endif
   if (BuckTargetVoltage < BuckMinVoltage || !BoostPowerlineStatus)
   {
     BuckPwm = 255;
     digitalWrite(BuckPin, HIGH);
-#ifdef DEBUG
+#ifdef BB_DEBUG
     Serial.println("Target voltage to low or power line off: shutdown!");
 #endif
     return;
@@ -272,7 +266,7 @@ void update_buck_converter()
     BuckPwm = BuckPwm + 1;
     BuckPwm = constrain(BuckPwm, 0, 255);
   }
-#ifdef DEBUG
+#ifdef BB_DEBUG
   Serial.print("PWM: ");
   Serial.println(BuckPwm);
 #endif
@@ -312,66 +306,50 @@ void release_pi_shutdown_pin()
   }
 }
 
+void open_pi_powerline()
+{
+  digitalWrite(PiPowerlinePin, LOW);
+  PiPowerlineStatus = true;
+  delay(power_lines_wait_time);
+#ifdef DEBUG
+  Serial.println("Pi power line opened");
+#endif
+}
+
+void open_boost_power_line()
+{
+  digitalWrite(BoostPowerlinePin, LOW);
+  BoostPowerlineStatus = true;
+  delay(power_lines_wait_time);
+#ifdef DEBUG
+  Serial.println("Boost power line opened");
+#endif
+}
+
+void open_v_power_line()
+{
+  digitalWrite(VPowerlinePin, LOW);
+  VPowerlineStatus = true;
+  delay(power_lines_wait_time);
+#ifdef DEBUG
+  Serial.println("V power line opened");
+#endif
+}
+
 void open_all_powerlines()
 {
-  check_power_lines_status();
-  if (!PiPowerlineStatus)
-  {
-    digitalWrite(PiPowerlinePin, LOW);
-  }
-  if (!BoostPowerlineStatus)
-  {
-    digitalWrite(BoostPowerlinePin, LOW);
-  }
-  //  if (!BuckPowerlineStatus)
-  //  {
-  //    digitalWrite(BuckPowerlinePin, LOW);
-  //  }
-  //  if (!RFLinkPowerlineStatus)
-  //  {
-  //    digitalWrite(RFLinkPowerlinePin, LOW);
-  //  }
-  if (!VPowerlineStatus)
-  {
-    digitalWrite(VPowerlinePin, LOW);
-  }
-  PiPowerlineStatus = true;
-  BoostPowerlineStatus = true;
-  //  BuckPowerlineStatus = true;
-  //  RFLinkPowerlineStatus = true;
-  VPowerlineStatus = true;
-#ifdef DEBUG
-  Serial.println("All power lines opened");
-#endif
+  open_pi_powerline();
+  open_boost_power_line();
+  open_v_power_line();
 }
 
 void close_all_powerlines()
 {
-  check_power_lines_status();
-  if (PiPowerlineStatus)
-  {
-    digitalWrite(PiPowerlinePin, HIGH);
-  }
-  if (BoostPowerlineStatus)
-  {
-    digitalWrite(BoostPowerlinePin, HIGH);
-  }
-  //  if (BuckPowerlineStatus)
-  //  {
-  //    digitalWrite(BuckPowerlinePin, HIGH);
-  //  }
-  //  if (RFLinkPowerlineStatus)
-  //  {
-  //    digitalWrite(RFLinkPowerlinePin, HIGH);
-  //  }
-  if (VPowerlineStatus)
-  {
-    digitalWrite(VPowerlinePin, HIGH);
-  }
+  digitalWrite(PiPowerlinePin, HIGH);
+  digitalWrite(BoostPowerlinePin, HIGH);
+  digitalWrite(VPowerlinePin, HIGH);
   PiPowerlineStatus = false;
   BoostPowerlineStatus = false;
-  //  BuckPowerlineStatus = false;
-  //  RFLinkPowerlineStatus = false;
   VPowerlineStatus = false;
 #ifdef DEBUG
   Serial.println("All power lines closed");
@@ -380,28 +358,32 @@ void close_all_powerlines()
 
 void on_button_release()
 {
-  monitor_pi_status = true;
   button_release_millis = current_time_millis;
-  // Short press detection (50 -350 ms)
+  update_pi_status();
+  // Short press detection (50 - 500 ms)
   if (current_time_millis - button_press_millis >= ClickMinTime && current_time_millis - button_press_millis <= ClickMaxTime)
   {
 #ifdef DEBUG
     Serial.println("Button click type: short");
 #endif
-    update_pi_status();
-    if (pi_status)
+    if (pi_status == 1)
     {
       activate_pi_shutdown_pin();
 #ifdef DEBUG
       Serial.println("Action: Pi is ON, shutdown triggered");
 #endif
     }
-    else
+    else if (pi_status == 0 || pi_status == 3)
     {
       open_all_powerlines();
+      monitor_pi_status = true;
 #ifdef DEBUG
       Serial.println("Action: Pi is OFF, opening all power lines");
 #endif
+    }
+    else if (pi_status == 2)
+    {
+      monitor_pi_status = true;
     }
   }
   // Long press detection (> 3000 ms)
@@ -410,7 +392,6 @@ void on_button_release()
 #ifdef DEBUG
     Serial.println("Button click type: long");
 #endif
-    check_power_lines_status();
     if (PiPowerlineStatus)
     {
       close_all_powerlines();
@@ -426,9 +407,9 @@ void on_button_release()
 #endif
     }
   }
+  // Unknown click time
   else
   {
-    monitor_pi_status = false;
     button_release_millis = 0;
 #ifdef DEBUG
     Serial.println("Button click type: unknown, do nothing");
@@ -448,28 +429,31 @@ void setup()
   pinMode(ButtonPin, INPUT_PULLUP);
   pinMode(BuckFeedbackPin, INPUT);
   pinMode(BoostFeedbackPin, INPUT);
-  pinMode(PiPowerlinePin, OUTPUT);
   pinMode(BoostPin, OUTPUT);
   pinMode(BuckPin, OUTPUT);
   pinMode(PiShutdownPin, OUTPUT);
-  pinMode(BoostPowerlinePin, OUTPUT);
-  //  pinMode(BuckPowerlinePin, OUTPUT);
-  //  pinMode(RFLinkPowerlinePin, OUTPUT);
-  pinMode(VPowerlinePin, OUTPUT);
   pinMode(StatusLedPin, OUTPUT);
   TCCR2B = TCCR2B & B11111000 | B00000001; // pin 3 and 11 PWM frequency of 31372.55 Hz
   analogWrite(BoostPin, BoostPwm);
   analogWrite(BuckPin, BuckPwm);
+  // Check the power line status on startup, the switch the PIN to output mode
+  pinMode(PiPowerlinePin, INPUT);
+  pinMode(BoostPowerlinePin, INPUT);
+  pinMode(VPowerlinePin, INPUT);
+  PiPowerlineStatus = !digitalRead(PiPowerlinePin);
+  BoostPowerlineStatus = !digitalRead(BoostPowerlinePin);
+  VPowerlineStatus = !digitalRead(VPowerlinePin);
+  pinMode(PiPowerlinePin, OUTPUT);
+  pinMode(BoostPowerlinePin, OUTPUT);
+  pinMode(VPowerlinePin, OUTPUT);
+  PiPowerlineStatus ? digitalWrite(PiPowerlinePin, LOW) : digitalWrite(PiPowerlinePin, HIGH);
+  BoostPowerlineStatus ? digitalWrite(BoostPowerlinePin, LOW) : digitalWrite(BoostPowerlinePin, HIGH);
+  VPowerlinePin ? digitalWrite(VPowerlinePin, LOW) : digitalWrite(VPowerlinePin, HIGH);
   // Check the OnPowerPin status and power on or off the hub accordingly
   digitalRead(OnPowerPin) ? close_all_powerlines() : open_all_powerlines();
   // Read the Pi poweroff pin status
   pi_poweroff_pin_status = digitalRead(PiPowerOffPin);
   last_pi_poweroff_pin_change_time = millis();
-  // Switch on all the power lines if the Pi is running
-  if (pi_poweroff_pin_status)
-  {
-    open_all_powerlines();
-  }
   // Deactivate the Pi shutdown PIN
   digitalWrite(PiShutdownPin, LOW);
   // Monitor pi status
@@ -523,7 +507,9 @@ void loop()
     last_pi_poweroff_pin_change_time = current_time_millis;
     monitor_pi_status = true;
 #ifdef DEBUG
-    Serial.println("Pi poweroff pin status change detected: start monitoring");
+    Serial.print("Pi poweroff pin status change detected: status=");
+    Serial.println(pi_poweroff_pin_status);
+    Serial.println("Start monitoring");
 #endif
   }
 
@@ -546,7 +532,7 @@ void loop()
     }
   }
 
-  // Monitor the pi status and at the end of the bounce time turn on or off the power lines
+  // Monitoring the pi status
   if (monitor_pi_status)
   {
     update_pi_status();
@@ -556,7 +542,7 @@ void loop()
 #ifdef DEBUG
       Serial.println("Monitoring finished: take action");
 #endif
-      if (pi_status)
+      if (pi_status == 1)
       {
         open_all_powerlines();
 #ifdef ENABLE_STATUS_LED
@@ -566,7 +552,7 @@ void loop()
         Serial.println("Action taken: all power lines opened");
 #endif
       }
-      else
+      else if (pi_status == 0 || pi_status == 2 || pi_status == 3)
       {
         close_all_powerlines();
 #ifdef ENABLE_STATUS_LED
