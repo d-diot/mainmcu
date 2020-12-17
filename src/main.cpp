@@ -8,13 +8,13 @@
 
 // General definitions
 #define ENABLE_STATUS_LED //Uncomment to enable the status LED
-#define DEBUG             //Uncomment to enable the debug messages in the serial output
+//#define DEBUG             //Uncomment to enable the debug messages in the serial output
 //#define BB_DEBUG          //Uncomment to enable the buck and boost debug messages in the serial output
-//#define DEBUG_DELAY 1500  //Uncomment to slow down the code speed in debug mode
+//#define DEBUG_DELAY 500   //Uncomment to slow down the code speed in debug mode
 
 // Status LED brightness (0-255)
 #ifdef ENABLE_STATUS_LED
-int StautsLedBrightness = 128;
+int StautsLedBrightness = 200;
 #endif
 
 // Boost Converter parameters
@@ -33,7 +33,7 @@ int BuckPwm = 255;            //Initial value of buck PWM (255 = off)
 int BuckMinVoltage = 1500;    //Minimum voltage allowed by the circuit design
 
 // Vcc sampling frequency: 0-65535. 0 = check Vcc at every loop cycle, 10 = check every 100 loop cycles
-unsigned int VccSamplingFreq = 100;
+unsigned int VccSamplingFreq = 10000;
 
 // Power line opening delay time
 unsigned long power_line_wait_time = 500; // Time to wait after opening a power line. Necessary to avoid peak of current adsorption
@@ -217,6 +217,11 @@ void setup()
 #ifndef ENABLE_STATUS_LED
   digitalWrite(StatusLedPin, LOW);
 #endif
+// Serial initialization
+#ifdef DEBUG
+  // initialize serial communication at 9600 bits per second:
+  Serial.begin(9600);
+#endif
   // Power line opening
   open_power_line();
   // pin 3 and 11 PWM frequency of 31372.55 Hz
@@ -227,8 +232,6 @@ void setup()
   // Vcc read
   Vcc = readVcc();
 #ifdef DEBUG
-  // initialize serial communication at 9600 bits per second:
-  Serial.begin(9600);
   Serial.print("Vcc: ");
   Serial.print(Vcc);
   Serial.println(" mV");
@@ -245,15 +248,20 @@ void loop()
   LoopCounter++;
   if (LoopCounter >= VccSamplingFreq)
   {
+    Vcc = readVcc();
 #ifdef DEBUG
     Serial.print("Loop Number: ");
     Serial.print(LoopCounter);
-    Serial.println(" . reading Vcc...");
+    Serial.print(". Reading Vcc... ");
+    Serial.print(Vcc);
+    Serial.println(" mV");
 #endif
-    Vcc = readVcc();
     LoopCounter = 0;
   }
   // Check boost and boost converter Vout and update PWM if necessary
   update_boost_converter();
   update_buck_converter();
+#ifdef DEBUG_DELAY
+  delay(DEBUG_DELAY);
+#endif
 }
