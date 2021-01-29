@@ -18,7 +18,7 @@ int StautsLedBrightness = 120;
 #endif
 
 // Boost Converter parameters
-int BoostTargetVoltage = 10000; //Desired output voltage of the boost converter (Millivolts)
+int BoostTargetVoltage = 11000; //Desired output voltage of the boost converter (Millivolts)
 long BoostR1 = 10000;           //R1 value in Ohm (feedback circuit)
 long BoostR2 = 3300;            //R2 value in Ohm (feedback circuit)
 int BoostPwm = 0;               //Initial value of boost PWM (0 = off)
